@@ -2,6 +2,8 @@ package com.learn.support.views.masterdetail;
 
 import com.learn.support.data.entity.SamplePerson;
 import com.learn.support.data.service.SamplePersonService;
+import com.learn.support.quartz.entity.SchedulerJobInfo;
+import com.learn.support.quartz.service.SchedulerJobService;
 import com.learn.support.views.MainLayout;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
@@ -12,6 +14,7 @@ import com.vaadin.flow.component.dependency.Uses;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
+import com.vaadin.flow.component.grid.contextmenu.GridContextMenu;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.notification.Notification;
@@ -32,35 +35,37 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 
 @PageTitle("Master-Detail")
-@Route(value = "master-detail/:samplePersonID?/:action?(edit)", layout = MainLayout.class)
+@Route(value = "master-detail/:scheduleJobId?/:action?(edit)", layout = MainLayout.class)
 @Uses(Icon.class)
 public class MasterDetailView extends Div implements BeforeEnterObserver {
 
-    private final String SAMPLEPERSON_ID = "samplePersonID";
-    private final String SAMPLEPERSON_EDIT_ROUTE_TEMPLATE = "master-detail/%s/edit";
+    private final String SCHEDULE_JOB_ID = "scheduleJobId";
+    private final String SCHDEULE_JOB_EDIT_ROUTE_TEMPLATE = "master-detail/%s/edit";
 
-    private final Grid<SamplePerson> grid = new Grid<>(SamplePerson.class, false);
+    private final Grid<SchedulerJobInfo> grid = new Grid<>(SchedulerJobInfo.class, false);
 
-    private TextField firstName;
-    private TextField lastName;
-    private TextField email;
-    private TextField phone;
-    private DatePicker dateOfBirth;
-    private TextField occupation;
-    private Checkbox important;
+    private TextField jobName;
+    private TextField jobGroup;
+    private TextField jobStatus;
+    private TextField jobClass;
+    private TextField cronExpression;
+    private TextField desc;
+    private TextField interfaceName;
+    private TextField repeatTime;
+    private Checkbox cronJob;
 
     private final Button cancel = new Button("Cancel");
     private final Button save = new Button("Save");
 
-    private final BeanValidationBinder<SamplePerson> binder;
+    private final BeanValidationBinder<SchedulerJobInfo> binder;
 
-    private SamplePerson samplePerson;
+    private SchedulerJobInfo schedulerJobInfo;
 
-    private final SamplePersonService samplePersonService;
+    private final SchedulerJobService schedulerJobService;
 
     @Autowired
-    public MasterDetailView(SamplePersonService samplePersonService) {
-        this.samplePersonService = samplePersonService;
+    public MasterDetailView(SchedulerJobService schedulerJobService) {
+        this.schedulerJobService = schedulerJobService;
         addClassNames("master-detail-view");
 
         // Create UI
@@ -72,22 +77,44 @@ public class MasterDetailView extends Div implements BeforeEnterObserver {
         add(splitLayout);
 
         // Configure Grid
-        grid.addColumn("firstName").setAutoWidth(true);
-        grid.addColumn("lastName").setAutoWidth(true);
-        grid.addColumn("email").setAutoWidth(true);
-        grid.addColumn("phone").setAutoWidth(true);
-        grid.addColumn("dateOfBirth").setAutoWidth(true);
-        grid.addColumn("occupation").setAutoWidth(true);
-        LitRenderer<SamplePerson> importantRenderer = LitRenderer.<SamplePerson>of(
-                "<vaadin-icon icon='vaadin:${item.icon}' style='width: var(--lumo-icon-size-s); height: var(--lumo-icon-size-s); color: ${item.color};'></vaadin-icon>")
-                .withProperty("icon", important -> important.isImportant() ? "check" : "minus").withProperty("color",
-                        important -> important.isImportant()
-                                ? "var(--lumo-primary-text-color)"
-                                : "var(--lumo-disabled-text-color)");
+        grid.addColumn("jobId").setAutoWidth(true);
+        grid.addColumn("jobName").setAutoWidth(true);
+        grid.addColumn("jobGroup").setAutoWidth(true);
+        grid.addColumn("jobStatus").setAutoWidth(true);
+        grid.addColumn("jobClass").setAutoWidth(true);
+        grid.addColumn("cronExpression").setAutoWidth(true);
+        grid.addColumn("desc").setAutoWidth(true);
+        grid.addColumn("interfaceName").setAutoWidth(true);
+        grid.addColumn("repeatTime").setAutoWidth(true);
+        grid.addColumn("cronJob").setAutoWidth(true);
 
-        grid.addColumn(importantRenderer).setHeader("Important").setAutoWidth(true);
+        GridContextMenu<SchedulerJobInfo> menu = grid.addContextMenu();
+        menu.addItem("Start/Schedule", event -> {
+            if(event.getItem().map(t-> this.schedulerJobService.startJobNow(t)).orElseGet(() -> false)){
+                Notification.show("Job Started or Scheduled");
+                refreshGrid();
+            }
+        });
+        menu.addItem("Pause", event -> {
+            if(event.getItem().map(t-> this.schedulerJobService.pauseJob(t)).orElseGet(() -> false)){
+                Notification.show("Job Paused");
+                refreshGrid();
+            }
+        });
+        menu.addItem("Resume", event -> {
+            if(event.getItem().map(t-> this.schedulerJobService.resumeJob(t)).orElseGet(() -> false)){
+                Notification.show("Job Resumed");
+                refreshGrid();
+            }
+        });
+        menu.addItem("Delete", event -> {
+            if(event.getItem().map(t-> this.schedulerJobService.deleteJob(t)).orElseGet(() -> false)){
+                Notification.show("Job Deleted");
+                refreshGrid();
+            }
+        });
 
-        grid.setItems(query -> samplePersonService.list(
+        grid.setItems(query -> schedulerJobService.list(
                 PageRequest.of(query.getPage(), query.getPageSize(), VaadinSpringDataHelpers.toSpringDataSort(query)))
                 .stream());
         grid.addThemeVariants(GridVariant.LUMO_NO_BORDER);
@@ -95,7 +122,7 @@ public class MasterDetailView extends Div implements BeforeEnterObserver {
         // when a row is selected or deselected, populate form
         grid.asSingleSelect().addValueChangeListener(event -> {
             if (event.getValue() != null) {
-                UI.getCurrent().navigate(String.format(SAMPLEPERSON_EDIT_ROUTE_TEMPLATE, event.getValue().getId()));
+                UI.getCurrent().navigate(String.format(SCHDEULE_JOB_EDIT_ROUTE_TEMPLATE, event.getValue().getJobId()));
             } else {
                 clearForm();
                 UI.getCurrent().navigate(MasterDetailView.class);
@@ -103,7 +130,7 @@ public class MasterDetailView extends Div implements BeforeEnterObserver {
         });
 
         // Configure Form
-        binder = new BeanValidationBinder<>(SamplePerson.class);
+        binder = new BeanValidationBinder<>(SchedulerJobInfo.class);
 
         // Bind fields. This is where you'd define e.g. validation rules
 
@@ -116,17 +143,20 @@ public class MasterDetailView extends Div implements BeforeEnterObserver {
 
         save.addClickListener(e -> {
             try {
-                if (this.samplePerson == null) {
-                    this.samplePerson = new SamplePerson();
+                if (this.schedulerJobInfo == null) {
+                    this.schedulerJobInfo = new SchedulerJobInfo();
                 }
-                binder.writeBean(this.samplePerson);
-                samplePersonService.update(this.samplePerson);
+                binder.writeBean(this.schedulerJobInfo);
+                this.schedulerJobService.saveOrupdate(this.schedulerJobInfo);
                 clearForm();
                 refreshGrid();
-                Notification.show("SamplePerson details stored.");
+                Notification.show("Schedule Job details stored.");
                 UI.getCurrent().navigate(MasterDetailView.class);
             } catch (ValidationException validationException) {
-                Notification.show("An exception happened while trying to store the samplePerson details.");
+                Notification.show("An exception happened while trying to store the Schedule Job details.");
+            } catch (Exception ex) {
+//                throw new RuntimeException(ex);
+                Notification.show("An exception happened while trying to store the Schedule Job details.");
             }
         });
 
@@ -134,9 +164,9 @@ public class MasterDetailView extends Div implements BeforeEnterObserver {
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
-        Optional<UUID> samplePersonId = event.getRouteParameters().get(SAMPLEPERSON_ID).map(UUID::fromString);
+        Optional<UUID> samplePersonId = event.getRouteParameters().get(SCHEDULE_JOB_ID).map(UUID::fromString);
         if (samplePersonId.isPresent()) {
-            Optional<SamplePerson> samplePersonFromBackend = samplePersonService.get(samplePersonId.get());
+            Optional<SchedulerJobInfo> samplePersonFromBackend = this.schedulerJobService.get(samplePersonId.get());
             if (samplePersonFromBackend.isPresent()) {
                 populateForm(samplePersonFromBackend.get());
             } else {
@@ -160,14 +190,18 @@ public class MasterDetailView extends Div implements BeforeEnterObserver {
         editorLayoutDiv.add(editorDiv);
 
         FormLayout formLayout = new FormLayout();
-        firstName = new TextField("First Name");
-        lastName = new TextField("Last Name");
-        email = new TextField("Email");
-        phone = new TextField("Phone");
-        dateOfBirth = new DatePicker("Date Of Birth");
-        occupation = new TextField("Occupation");
-        important = new Checkbox("Important");
-        formLayout.add(firstName, lastName, email, phone, dateOfBirth, occupation, important);
+        jobName = new TextField("Job Name");
+        jobGroup = new TextField("Job Group");
+        jobStatus = new TextField("Job Status");
+        cronExpression = new TextField("Cron Expression");
+        desc = new TextField("Desc");
+        interfaceName = new TextField("Interface Name");
+        repeatTime = new TextField("Repeat Time");
+        cronJob = new Checkbox("Cron Job");
+
+
+
+        formLayout.add(jobName,jobGroup,jobStatus,cronExpression,desc,interfaceName,repeatTime,cronJob);
 
         editorDiv.add(formLayout);
         createButtonLayout(editorLayoutDiv);
@@ -200,9 +234,9 @@ public class MasterDetailView extends Div implements BeforeEnterObserver {
         populateForm(null);
     }
 
-    private void populateForm(SamplePerson value) {
-        this.samplePerson = value;
-        binder.readBean(this.samplePerson);
+    private void populateForm(SchedulerJobInfo value) {
+        this.schedulerJobInfo = value;
+        binder.readBean(this.schedulerJobInfo);
 
     }
 }
